@@ -1,0 +1,23 @@
+name: fast-realworld-app
+version: "0.1"
+author: Robert G. Jakabosky <rjakabosky@neoawareness.com>
+about: Fast realworld example app.
+args:
+    - config:
+        short: c
+        long: config
+        value_name: FILE
+        help: config file
+        takes_value: true
+    - verbose:
+        short: v
+        multiple: true
+        help: Sets the level of verbosity
+subcommands:
+    - serve:
+        about: Run realworld API services.
+        version: "0.0.1"
+        args:
+            - debug:
+                short: d
+                help: print debug information

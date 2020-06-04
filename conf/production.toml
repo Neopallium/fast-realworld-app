@@ -1,0 +1,24 @@
+debug = false
+servers = ["public"]
+
+[db]
+# Can also be set with the APP_DB_URL environment variable.
+#url = "postgres://user:password@localhost/conduit"
+
+[public]
+listen = "0.0.0.0:8089"
+workers = 32
+backlog = 8192
+services = [
+  "User", "Profile", "Article",
+  "Tag"
+]
+
+[User]
+
+[Profile]
+allow_update = true
+
+[Article]
+allow_update = true
+allow_delete = true

@@ -1,0 +1,12 @@
+.env
+target
+
+# VIM folder write test file.
+4913
+
+# extra
+*.out
+*.xml
+*.txt
+*.sh
+scripts/.trip
