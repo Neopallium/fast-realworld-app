@@ -1,5 +1,6 @@
 use crate::error::*;
 
+use crate::auth::*;
 use crate::models::*;
 use crate::forms::article::*;
 
@@ -109,14 +110,14 @@ impl ArticleService {
     Ok(())
   }
 
-  pub async fn get_by_slug(&self, user_id: Option<i32>, slug: &str) -> Result<Option<ArticleDetails>> {
-    let user_id = user_id.unwrap_or(0);
+  pub async fn get_by_slug(&self, auth: Option<AuthData>, slug: &str) -> Result<Option<ArticleDetails>> {
+    let user_id = auth.unwrap_or_default().user_id;
     let row = self.article_by_slug.query_opt(&[&user_id, &slug]).await?;
     Ok(article_details_from_opt_row(&row))
   }
 
-  pub async fn get_articles(&self, user_id: Option<i32>, req: ArticleRequest) -> Result<Vec<ArticleDetails>> {
-    let user_id = user_id.unwrap_or(0);
+  pub async fn get_articles(&self, auth: Option<AuthData>, req: ArticleRequest) -> Result<Vec<ArticleDetails>> {
+    let user_id = auth.unwrap_or_default().user_id;
     let limit = req.limit.unwrap_or(20);
     let offset = req.offset.unwrap_or(0);
     let rows = self.get_articles.query(&[&user_id, &limit, &offset]).await?;

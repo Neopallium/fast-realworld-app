@@ -8,19 +8,23 @@ use actix_web::{
 use crate::error::*;
 use crate::app::*;
 use crate::models::*;
+use crate::auth::AuthData;
+
 use crate::forms::article::*;
 use crate::db::DbService;
 
+use crate::middleware::Auth;
+
 /// Get list of articles
-#[get("/articles")]
+#[get("/articles", wrap="Auth::optional()")]
 async fn list(
+  auth: Option<AuthData>,
   db: web::Data<DbService>,
   req: web::Query<ArticleRequest>
 ) -> Result<HttpResponse, Error> {
 
-  // TODO: auth
   // TODO: author, tag, favorited filters.
-  let articles = db.article.get_articles(None, req.into_inner()).await?;
+  let articles = db.article.get_articles(auth, req.into_inner()).await?;
 
   Ok(HttpResponse::Ok().json(ArticleList::<ArticleDetails> {
     articles_count: articles.len(),
@@ -29,14 +33,13 @@ async fn list(
 }
 
 /// get article by slug
-#[get("/articles/{slug}")]
+#[get("/articles/{slug}", wrap="Auth::optional()")]
 async fn get_article(
+  auth: Option<AuthData>,
   db: web::Data<DbService>,
   slug: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  // TODO: auth
-
-  if let Some(article) = db.article.get_by_slug(None, &slug).await? {
+  if let Some(article) = db.article.get_by_slug(auth, &slug).await? {
     Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
       article,
     }))
@@ -46,8 +49,9 @@ async fn get_article(
 }
 
 /// post new article
-#[post("/articles")]
+#[post("/articles", wrap="Auth::required()")]
 async fn store_article(
+  _auth: AuthData,
   _db: web::Data<DbService>,
   article: web::Json<ArticleOut<CreateArticle>>,
 ) -> Result<HttpResponse, Error> {
@@ -58,8 +62,9 @@ async fn store_article(
 }
 
 /// post update to existing article
-#[post("/articles/{slug}")]
+#[post("/articles/{slug}", wrap="Auth::required()")]
 async fn update_article(
+  _auth: AuthData,
   cfg: web::Data<ArticleService>,
   _db: web::Data<DbService>,
   _slug: web::Path<String>,
@@ -74,8 +79,9 @@ async fn update_article(
 }
 
 /// delete an existing article
-#[delete("/articles/{slug}")]
+#[delete("/articles/{slug}", wrap="Auth::required()")]
 async fn delete_article(
+  _auth: AuthData,
   cfg: web::Data<ArticleService>,
   _db: web::Data<DbService>,
   _slug: web::Path<String>,

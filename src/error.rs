@@ -3,10 +3,18 @@ use log::*;
 use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use serde_json::Value as JsonValue;
 
+use libreauth::pass;
+
+use jsonwebtoken::errors::Error as JwtError;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
+  // 401
+  #[error("unauthorized: {0}")]
+  Unauthorized(JsonValue),
+
   // 404
   #[error("not found: {0}")]
   NotFound(JsonValue),
@@ -28,6 +36,16 @@ pub enum Error {
   JsonError {
     #[from]
     source: serde_json::Error,
+  },
+
+  // Password error
+  #[error("Password error: {0}")]
+  PasswordError(String),
+
+  #[error("JWT error")]
+  JwtError {
+    #[from]
+    source: JwtError,
   },
 
   #[error("actix mailbox error")]
@@ -73,6 +91,12 @@ pub enum Error {
   Other(#[from] anyhow::Error),
 }
 
+impl From<pass::ErrorCode> for Error {
+  fn from(code: pass::ErrorCode) -> Self {
+    Error::PasswordError(format!("code={:?}", code))
+  }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 // the ResponseError trait lets us convert errors to http responses with appropriate data
@@ -80,6 +104,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 impl ResponseError for Error {
   fn error_response(&self) -> HttpResponse {
     match self {
+      Error::Unauthorized(ref message) => HttpResponse::Unauthorized().json(message),
       Error::NotFound(ref message) => HttpResponse::NotFound().json(message),
       Error::UnprocessableEntity(ref message) => {
         HttpResponse::build(StatusCode::UNPROCESSABLE_ENTITY).json(message)
