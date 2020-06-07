@@ -79,6 +79,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "actix-cors"
+version = "0.3.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7025b53db4e7e1c50c55fae59e0c6d23be8ef56702daa2eb5bf7ad23fae2a11e"
+dependencies = [
+ "actix-service",
+ "actix-web",
+ "derive_more",
+ "futures-util",
+]
+
+[[package]]
 name = "actix-files"
 version = "0.3.0-alpha.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -898,6 +910,7 @@ name = "fast-realworld"
 version = "0.1.0"
 dependencies = [
  "actix",
+ "actix-cors",
  "actix-files",
  "actix-rt",
  "actix-web",

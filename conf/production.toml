@@ -14,6 +14,18 @@ services = [
   "Tag"
 ]
 
+[public.cors]
+origins = [
+  "https://example.com"
+]
+methods = [
+  "GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"
+]
+headers = [
+  "Authorization", "Content-Type"
+]
+max-age = 3600
+
 [User]
 
 [Profile]

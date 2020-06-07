@@ -10,6 +10,7 @@ use crossbeam_channel::{
 
 use actix_rt::System;
 use actix_web::{get, web, middleware, HttpResponse, App, HttpServer};
+use actix_cors::*;
 
 use crate::{
   error::*,
@@ -195,6 +196,45 @@ async fn test_db(url: String) -> Result<()> {
   db.prepare().await
 }
 
+fn setup_cors(config: &Option<config::Table>) -> Result<CorsFactory> {
+  if let Some(config) = config {
+    let mut cors = Cors::new();
+
+    // Origins
+    if let Some(origins) = config.get_str_array("origins")? {
+      debug!("Cors: origins = {:?}", origins);
+      for origin in origins {
+        cors = cors.allowed_origin(&origin);
+        if origin == "*" {
+          cors = cors.send_wildcard();
+        }
+      }
+    }
+
+    // Methods
+    if let Some(methods) = config.get_str_array("methods")? {
+      debug!("Cors: methods = {:?}", methods);
+      cors = cors.allowed_methods(methods.iter().map(|s| s.as_str()));
+    }
+
+    // Headers
+    if let Some(headers) = config.get_str_array("headers")? {
+      debug!("Cors: headers = {:?}", headers);
+      cors = cors.allowed_headers(headers.iter().map(|s| s.as_str()));
+    }
+
+    // max age
+    if let Some(max_age) = config.get_int("max-age")? {
+      debug!("Cors: max-age = {}", max_age);
+      cors = cors.max_age(max_age.try_into().expect("max-age must be positive."));
+    }
+
+    Ok(cors.finish())
+  } else {
+    Ok(Cors::default())
+  }
+}
+
 fn run_server(config: &AppConfig, prefix: &str, waiter: ServerWaiter) -> Result<()> {
   let mut sys = System::new(format!("system.{}", prefix));
 
@@ -220,6 +260,11 @@ fn run_server(config: &AppConfig, prefix: &str, waiter: ServerWaiter) -> Result<
     None
   };
 
+  // CORS config
+  let cors = config.get_table(&format!("{}.cors", prefix))?;
+  // Check for CORs config errors.
+  setup_cors(&cors)?;
+
   // Start http server
   let mut server = HttpServer::new(move || {
     // change default limits
@@ -228,7 +273,8 @@ fn run_server(config: &AppConfig, prefix: &str, waiter: ServerWaiter) -> Result<
     let mut app = App::new()
       .app_data(form)
       // enable logger
-      //.wrap(middleware::Logger::default())
+      .wrap(setup_cors(&cors).unwrap())
+      .wrap(middleware::Logger::default())
       .wrap(middleware::Compress::default())
       .configure(|web| services.web_config(web));
 

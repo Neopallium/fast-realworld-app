@@ -107,6 +107,27 @@ impl AppConfig {
     };
     Ok(val)
   }
+
+  pub fn get_str_array(&self, key: &str) -> Result<Option<Vec<String>>> {
+    let val: Option<Value> = self.get(key)?;
+    let val = if let Some(val) = val {
+      // Check if value is a string.
+      if let Ok(val) = Value::into_str(val.clone()) {
+        Some(vec![val])
+      } else {
+        let val = Value::into_array(val)?;
+        let str_array: Result<Vec<String>, ConfigError>
+          = val.into_iter().map(|v| v.into_str()).collect();
+        if let Err(err) = str_array {
+          return Err(err.into());
+        }
+        Some(str_array.unwrap())
+      }
+    } else {
+      None
+    };
+    Ok(val)
+  }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -185,6 +206,26 @@ impl Table {
   pub fn get_array(&self, key: &str) -> Result<Option<Vec<Value>>> {
     let val = if let Some(val) = self.get(key) {
       Some(Value::into_array(val)?)
+    } else {
+      None
+    };
+    Ok(val)
+  }
+
+  pub fn get_str_array(&self, key: &str) -> Result<Option<Vec<String>>> {
+    let val = if let Some(val) = self.get(key) {
+      // Check if value is a string.
+      if let Ok(val) = Value::into_str(val.clone()) {
+        Some(vec![val])
+      } else {
+        let val = Value::into_array(val)?;
+        let str_array: Result<Vec<String>, ConfigError>
+          = val.into_iter().map(|v| v.into_str()).collect();
+        if let Err(err) = str_array {
+          return Err(err.into());
+        }
+        Some(str_array.unwrap())
+      }
     } else {
       None
     };
