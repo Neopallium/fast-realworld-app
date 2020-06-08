@@ -80,7 +80,7 @@ fn article_details_from_row(row: &Row) -> ArticleDetails {
   let body: String = row.get(4);
   let created_at: chrono::NaiveDateTime = row.get(5);
   let updated_at: chrono::NaiveDateTime = row.get(6);
-  let tags_list: &str = row.get(7);
+  let tags_list: Option<&str> = row.get(7);
   let favorited: i32 = row.get(8);
   let favorites_count: i32 = row.get(9);
   let user_id: i32 = row.get(10);
@@ -88,6 +88,13 @@ fn article_details_from_row(row: &Row) -> ArticleDetails {
   let bio: Option<String> = row.get(12);
   let image: Option<String> = row.get(13);
   let following: i32 = row.get(14);
+
+  let tags = match tags_list {
+    Some(tags) => {
+      tags.split(",").map(|s| s.to_string()).collect()
+    },
+    None => vec![],
+  };
 
   ArticleDetails {
     id,
@@ -97,7 +104,7 @@ fn article_details_from_row(row: &Row) -> ArticleDetails {
     body,
     created_at,
     updated_at,
-    tag_list: tags_list.split(",").map(|s| s.to_string()).collect(),
+    tag_list: tags,
     favorited: favorited == 1,
     favorites_count: favorites_count.into(),
     author: Profile {
