@@ -23,7 +23,6 @@ async fn list(
 ) -> Result<HttpResponse, Error> {
   let auth = auth.unwrap_or_default();
 
-  // TODO: author, tag, favorited filters.
   let articles = db.article.get_articles(&auth, req.into_inner()).await?;
 
   Ok(HttpResponse::Ok().json(ArticleList::<ArticleDetails> {

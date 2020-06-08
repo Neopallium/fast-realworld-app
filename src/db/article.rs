@@ -32,6 +32,9 @@ pub struct ArticleService {
 
   // get multiple articles
   get_articles: VersionedStatement,
+  get_articles_by_author: VersionedStatement,
+  get_articles_by_tag: VersionedStatement,
+  get_articles_by_favorite: VersionedStatement,
 
   // get user's feed
   get_feed: VersionedStatement,
@@ -176,6 +179,18 @@ impl ArticleService {
     // Build get_articles queries
     let get_articles = VersionedStatement::new(cl.clone(),
         &format!(r#"{} ORDER BY a.id DESC LIMIT $2 OFFSET $3 "#, ARTICLE_DETAILS_SELECT))?;
+    let get_articles_by_author = VersionedStatement::new(cl.clone(),
+        &format!(r#"{} WHERE u.username = $4
+          ORDER BY a.id DESC LIMIT $2 OFFSET $3 "#, ARTICLE_DETAILS_SELECT))?;
+    let get_articles_by_tag = VersionedStatement::new(cl.clone(),
+        &format!(r#"{} INNER JOIN article_tags t ON a.id = t.article_id
+          WHERE t.tag_name = $4
+          ORDER BY a.id DESC LIMIT $2 OFFSET $3 "#, ARTICLE_DETAILS_SELECT))?;
+    let get_articles_by_favorite = VersionedStatement::new(cl.clone(),
+        &format!(r#"{} INNER JOIN favorite_articles fav_art ON a.id = fav_art.article_id
+          INNER JOIN users fav_u ON fav_art.user_id = fav_u.id
+          WHERE fav_u.username = $4
+          ORDER BY a.id DESC LIMIT $2 OFFSET $3 "#, ARTICLE_DETAILS_SELECT))?;
 
     // Build get_feed queries
     let get_feed = VersionedStatement::new(cl.clone(),
@@ -200,6 +215,9 @@ impl ArticleService {
       delete_article,
 
       get_articles,
+      get_articles_by_author,
+      get_articles_by_tag,
+      get_articles_by_favorite,
       get_feed,
 
       favorite_article,
@@ -219,6 +237,9 @@ impl ArticleService {
     self.delete_article.prepare().await?;
 
     self.get_articles.prepare().await?;
+    self.get_articles_by_author.prepare().await?;
+    self.get_articles_by_tag.prepare().await?;
+    self.get_articles_by_favorite.prepare().await?;
     self.get_feed.prepare().await?;
 
     self.favorite_article.prepare().await?;
@@ -315,7 +336,16 @@ impl ArticleService {
   pub async fn get_articles(&self, auth: &AuthData, req: ArticleRequest) -> Result<Vec<ArticleDetails>> {
     let limit = req.limit.unwrap_or(20);
     let offset = req.offset.unwrap_or(0);
-    let rows = self.get_articles.query(&[&auth.user_id, &limit, &offset]).await?;
+    let rows = if let Some(author) = &req.author {
+      self.get_articles_by_author.query(&[&auth.user_id, &limit, &offset,
+        &author]).await?
+    } else if let Some(tag) = &req.tag {
+      self.get_articles_by_tag.query(&[&auth.user_id, &limit, &offset, &tag]).await?
+    } else if let Some(favorited) = &req.favorited {
+      self.get_articles_by_favorite.query(&[&auth.user_id, &limit, &offset, &favorited]).await?
+    } else {
+      self.get_articles.query(&[&auth.user_id, &limit, &offset]).await?
+    };
     Ok(rows.iter().map(article_details_from_row).collect())
   }
 
