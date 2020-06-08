@@ -21,7 +21,9 @@ async fn get_profile(
   db: web::Data<DbService>,
   username: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  match db.user.get_profile(auth, &username).await? {
+  let auth = auth.unwrap_or_default();
+
+  match db.user.get_profile(&auth, &username).await? {
     Some(profile) => {
       Ok(HttpResponse::Ok().json(ProfileOut {
         profile,
@@ -42,12 +44,12 @@ async fn follow(
   db: web::Data<DbService>,
   username: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  match db.user.get_profile(Some(auth.clone()), &username).await? {
+  match db.user.get_profile(&auth, &username).await? {
     Some(mut profile) => {
       // Check if the current user is already following them.
       if !profile.following {
         // update DB to mark the current user as following them.
-        db.user.follow(auth, profile.user_id).await?;
+        db.user.follow(&auth, profile.user_id).await?;
         profile.following = true;
       }
       Ok(HttpResponse::Ok().json(ProfileOut {
@@ -69,12 +71,12 @@ async fn unfollow(
   db: web::Data<DbService>,
   username: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  match db.user.get_profile(Some(auth.clone()), &username).await? {
+  match db.user.get_profile(&auth, &username).await? {
     Some(mut profile) => {
       // Check if the current user is already following them.
       if profile.following {
         // update DB to mark the current user as not following them.
-        db.user.unfollow(auth, profile.user_id).await?;
+        db.user.unfollow(&auth, profile.user_id).await?;
         profile.following = false;
       }
       Ok(HttpResponse::Ok().json(ProfileOut {

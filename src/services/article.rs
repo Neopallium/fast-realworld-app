@@ -9,7 +9,7 @@ use crate::error::*;
 use crate::app::*;
 
 use crate::models::*;
-use crate::forms::article::*;
+use crate::forms::*;
 
 use crate::db::DbService;
 
@@ -23,9 +23,10 @@ async fn list(
   db: web::Data<DbService>,
   req: web::Query<ArticleRequest>
 ) -> Result<HttpResponse, Error> {
+  let auth = auth.unwrap_or_default();
 
   // TODO: author, tag, favorited filters.
-  let articles = db.article.get_articles(auth, req.into_inner()).await?;
+  let articles = db.article.get_articles(&auth, req.into_inner()).await?;
 
   Ok(HttpResponse::Ok().json(ArticleList::<ArticleDetails> {
     articles_count: articles.len(),
@@ -41,7 +42,7 @@ async fn feed(
   req: web::Query<FeedRequest>
 ) -> Result<HttpResponse, Error> {
 
-  let articles = db.article.get_feed(auth, req.into_inner()).await?;
+  let articles = db.article.get_feed(&auth, req.into_inner()).await?;
 
   Ok(HttpResponse::Ok().json(ArticleList::<ArticleDetails> {
     articles_count: articles.len(),
@@ -56,59 +57,10 @@ async fn get_article(
   db: web::Data<DbService>,
   slug: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  if let Some(article) = db.article.get_by_slug(auth, &slug).await? {
-    Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
-      article,
-    }))
-  } else {
-    Ok(HttpResponse::NotFound().finish())
-  }
-}
+  let auth = auth.unwrap_or_default();
 
-/// favorite article
-#[post("/articles/{slug}/favorite", wrap="Auth::required()")]
-async fn favorite(
-  auth: AuthData,
-  db: web::Data<DbService>,
-  slug: web::Path<String>,
-) -> Result<HttpResponse, Error> {
-  match db.article.get_by_slug(Some(auth.clone()), &slug).await? {
-    Some(mut article) => {
-      // Check if the current user has already favorited the article
-      if !article.favorited {
-        // mark article as favorited by the current user
-        db.article.favorite(auth, article.id).await?;
-        article.favorited = true;
-        article.favorites_count += 1;
-      }
-      Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
-        article,
-      }))
-    },
-    None => {
-      Ok(HttpResponse::NotFound().json(json!({
-        "error": "Article not found",
-      })))
-    }
-  }
-}
-
-/// unfavorite article
-#[delete("/articles/{slug}/favorite", wrap="Auth::required()")]
-async fn unfavorite(
-  auth: AuthData,
-  db: web::Data<DbService>,
-  slug: web::Path<String>,
-) -> Result<HttpResponse, Error> {
-  match db.article.get_by_slug(Some(auth.clone()), &slug).await? {
-    Some(mut article) => {
-      // Check if the current user has already favorited the article
-      if article.favorited {
-        // mark article as unfavorited by the current user
-        db.article.unfavorite(auth, article.id).await?;
-        article.favorited = false;
-        article.favorites_count -= 1;
-      }
+  match db.article.get_by_slug(&auth, &slug).await? {
+    Some(article) => {
       Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
         article,
       }))
@@ -137,44 +89,224 @@ async fn store_article(
 /// post update to existing article
 #[post("/articles/{slug}", wrap="Auth::required()")]
 async fn update_article(
-  _auth: AuthData,
+  auth: AuthData,
   cfg: web::Data<ArticleService>,
-  _db: web::Data<DbService>,
-  _slug: web::Path<String>,
-  article: web::Json<ArticleOut<UpdateArticle>>,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
+  _req: web::Json<ArticleOut<UpdateArticle>>,
 ) -> Result<HttpResponse, Error> {
-  let article = article.into_inner().article;
-
-  if cfg.allow_update {
-    info!("Article - update article: TODO");
+  match db.article.get_by_slug(&auth, &slug).await? {
+    Some(old_article) => {
+      if cfg.allow_update {
+        info!("Article - update article: TODO");
+        Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
+          article: old_article,
+        }))
+      } else {
+        Ok(HttpResponse::Forbidden().json(json!({
+          "error": "Update article disabled.",
+        })))
+      }
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Article not found",
+      })))
+    }
   }
-  Ok(HttpResponse::Ok().json(article))
 }
 
 /// delete an existing article
 #[delete("/articles/{slug}", wrap="Auth::required()")]
 async fn delete_article(
-  _auth: AuthData,
+  auth: AuthData,
   cfg: web::Data<ArticleService>,
-  _db: web::Data<DbService>,
-  _slug: web::Path<String>,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  if cfg.allow_delete {
-    info!("Article - new article: TODO");
+  match db.article.get_by_slug(&auth, &slug).await? {
+    Some(_old_article) => {
+      if cfg.allow_delete {
+        info!("Article - delete article: TODO");
+        Ok(HttpResponse::Ok().finish())
+      } else {
+        Ok(HttpResponse::Forbidden().json(json!({
+          "error": "Delete article disabled.",
+        })))
+      }
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Article not found",
+      })))
+    }
   }
-  Ok(HttpResponse::Ok().finish())
+}
+
+/////////////////////////////// Article Comments
+
+/// get article comments by slug
+#[get("/articles/{slug}/comments", wrap="Auth::optional()")]
+async fn get_comments(
+  auth: Option<AuthData>,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
+) -> Result<HttpResponse, Error> {
+  let auth = auth.unwrap_or_default();
+
+  let comments = db.comment.get_comments_by_slug(&auth, &slug).await?;
+  Ok(HttpResponse::Ok().json(CommentList {
+    comments,
+  }))
+}
+
+/// Add comment to article
+#[post("/articles/{slug}/comments", wrap="Auth::required()")]
+async fn store_comment(
+  auth: AuthData,
+  cfg: web::Data<ArticleService>,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
+  req: web::Json<CommentOut<CreateComment>>,
+) -> Result<HttpResponse, Error> {
+  match db.article.get_by_slug(&auth, &slug).await? {
+    Some(article) => {
+      if cfg.allow_comments {
+        match db.comment.store(&auth, article.id, &req.comment).await? {
+          Some(comment_id) => {
+            match db.comment.get_comment_by_id(&auth, comment_id).await? {
+              Some(comment) => {
+                Ok(HttpResponse::Ok().json(CommentOut {
+                  comment,
+                }))
+              },
+              None => {
+                Ok(HttpResponse::InternalServerError().json(json!({
+                  "error": "Failed to find new comment.",
+                })))
+              }
+            }
+          },
+          None => {
+            Ok(HttpResponse::InternalServerError().json(json!({
+              "error": "Failed to add comment.",
+            })))
+          }
+        }
+      } else {
+        Ok(HttpResponse::Forbidden().json(json!({
+          "error": "Add comments disabled.",
+        })))
+      }
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Comment not found",
+      })))
+    }
+  }
+}
+
+/// delete an article comment
+#[delete("/articles/{slug}/comments/{id}", wrap="Auth::required()")]
+async fn delete_comment(
+  auth: AuthData,
+  cfg: web::Data<ArticleService>,
+  db: web::Data<DbService>,
+  info: web::Path<(String, i32)>,
+) -> Result<HttpResponse, Error> {
+  match db.comment.get_comment_by_id(&auth, info.1).await? {
+    Some(comment) => {
+      // Check if the user can delete the comment.
+      if cfg.allow_comments && comment.author.user_id == auth.user_id {
+        db.comment.delete(comment.id).await?;
+        Ok(HttpResponse::Ok().finish())
+      } else {
+        Ok(HttpResponse::Forbidden().json(json!({
+          "error": "Comments disabled.",
+        })))
+      }
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Comment not found",
+      })))
+    }
+  }
+}
+
+/////////////////////////////// Article Favorites
+
+/// favorite article
+#[post("/articles/{slug}/favorite", wrap="Auth::required()")]
+async fn favorite(
+  auth: AuthData,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
+) -> Result<HttpResponse, Error> {
+  match db.article.get_by_slug(&auth, &slug).await? {
+    Some(mut article) => {
+      // Check if the current user has already favorited the article
+      if !article.favorited {
+        // mark article as favorited by the current user
+        db.article.favorite(&auth, article.id).await?;
+        article.favorited = true;
+        article.favorites_count += 1;
+      }
+      Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
+        article,
+      }))
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Article not found",
+      })))
+    }
+  }
+}
+
+/// unfavorite article
+#[delete("/articles/{slug}/favorite", wrap="Auth::required()")]
+async fn unfavorite(
+  auth: AuthData,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
+) -> Result<HttpResponse, Error> {
+  match db.article.get_by_slug(&auth, &slug).await? {
+    Some(mut article) => {
+      // Check if the current user has already favorited the article
+      if article.favorited {
+        // mark article as unfavorited by the current user
+        db.article.unfavorite(&auth, article.id).await?;
+        article.favorited = false;
+        article.favorites_count -= 1;
+      }
+      Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
+        article,
+      }))
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Article not found",
+      })))
+    }
+  }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ArticleService {
   pub allow_update: bool,
   pub allow_delete: bool,
+
+  pub allow_comments: bool,
 }
 
 impl super::Service for ArticleService {
   fn load_app_config(&mut self, config: &AppConfig, _prefix: &str) -> Result<()> {
     self.allow_update = config.get_bool("Article.allow_update")?.unwrap_or(false);
     self.allow_delete = config.get_bool("Article.allow_delete")?.unwrap_or(false);
+
+    self.allow_comments = config.get_bool("Article.allow_comments")?.unwrap_or(false);
     Ok(())
   }
 
@@ -183,12 +315,21 @@ impl super::Service for ArticleService {
       .data(self.clone())
       .service(list)
       .service(feed)
+
+      // Article get/create/update/delete
       .service(get_article)
-      .service(favorite)
-      .service(unfavorite)
       .service(store_article)
       .service(update_article)
-      .service(delete_article);
+      .service(delete_article)
+
+      // Article comments
+      .service(get_comments)
+      .service(store_comment)
+      .service(delete_comment)
+
+      // Article favorites
+      .service(favorite)
+      .service(unfavorite);
   }
 }
 

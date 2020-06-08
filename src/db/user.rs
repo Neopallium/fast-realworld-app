@@ -198,17 +198,16 @@ impl UserService {
     Ok(self.update_user_password.execute(&[&hash, &user_id]).await?)
   }
 
-  pub async fn get_profile(&self, auth: Option<AuthData>, username: &str) -> Result<Option<Profile>> {
-    let user_id = auth.unwrap_or_default().user_id;
-    let row = self.get_profile.query_opt(&[&user_id, &username]).await?;
+  pub async fn get_profile(&self, auth: &AuthData, username: &str) -> Result<Option<Profile>> {
+    let row = self.get_profile.query_opt(&[&auth.user_id, &username]).await?;
     Ok(profile_from_opt_row(&row))
   }
 
-  pub async fn follow(&self, auth: AuthData, user_id: i32) -> Result<u64> {
+  pub async fn follow(&self, auth: &AuthData, user_id: i32) -> Result<u64> {
     Ok(self.follow_user.execute(&[&user_id, &auth.user_id]).await?)
   }
 
-  pub async fn unfollow(&self, auth: AuthData, user_id: i32) -> Result<u64> {
+  pub async fn unfollow(&self, auth: &AuthData, user_id: i32) -> Result<u64> {
     Ok(self.unfollow_user.execute(&[&user_id, &auth.user_id]).await?)
   }
 

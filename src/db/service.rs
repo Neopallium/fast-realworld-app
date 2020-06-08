@@ -16,6 +16,7 @@ use crate::error::*;
 use super::{
   UserService,
   ArticleService,
+  CommentService,
   TagService,
 };
 
@@ -353,6 +354,7 @@ pub struct DbService {
   pub shared_cl: SharedClient,
   pub user: UserService,
   pub article: ArticleService,
+  pub comment: CommentService,
   pub tag: TagService,
 }
 
@@ -363,6 +365,7 @@ impl DbService {
     Ok(DbService {
       user: UserService::new(shared_cl.clone())?,
       article: ArticleService::new(shared_cl.clone())?,
+      comment: CommentService::new(shared_cl.clone())?,
       tag: TagService::new(shared_cl.clone())?,
       shared_cl: shared_cl,
     })
@@ -373,6 +376,8 @@ impl DbService {
     self.user.prepare().await?;
     info!("DBService: Prepare ArticleService.");
     self.article.prepare().await?;
+    info!("DBService: Prepare CommentService.");
+    self.comment.prepare().await?;
     info!("DBService: Prepare TagService.");
     self.tag.prepare().await?;
 

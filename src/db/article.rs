@@ -166,29 +166,27 @@ impl ArticleService {
     Ok(())
   }
 
-  pub async fn get_by_slug(&self, auth: Option<AuthData>, slug: &str) -> Result<Option<ArticleDetails>> {
-    let user_id = auth.unwrap_or_default().user_id;
-    let row = self.article_by_slug.query_opt(&[&user_id, &slug]).await?;
+  pub async fn get_by_slug(&self, auth: &AuthData, slug: &str) -> Result<Option<ArticleDetails>> {
+    let row = self.article_by_slug.query_opt(&[&auth.user_id, &slug]).await?;
     Ok(article_details_from_opt_row(&row))
   }
 
-  pub async fn favorite(&self, auth: AuthData, article_id: i32) -> Result<u64> {
+  pub async fn favorite(&self, auth: &AuthData, article_id: i32) -> Result<u64> {
     Ok(self.favorite_article.execute(&[&auth.user_id, &article_id]).await?)
   }
 
-  pub async fn unfavorite(&self, auth: AuthData, article_id: i32) -> Result<u64> {
+  pub async fn unfavorite(&self, auth: &AuthData, article_id: i32) -> Result<u64> {
     Ok(self.unfavorite_article.execute(&[&auth.user_id, &article_id]).await?)
   }
 
-  pub async fn get_articles(&self, auth: Option<AuthData>, req: ArticleRequest) -> Result<Vec<ArticleDetails>> {
-    let user_id = auth.unwrap_or_default().user_id;
+  pub async fn get_articles(&self, auth: &AuthData, req: ArticleRequest) -> Result<Vec<ArticleDetails>> {
     let limit = req.limit.unwrap_or(20);
     let offset = req.offset.unwrap_or(0);
-    let rows = self.get_articles.query(&[&user_id, &limit, &offset]).await?;
+    let rows = self.get_articles.query(&[&auth.user_id, &limit, &offset]).await?;
     Ok(rows.iter().map(article_details_from_row).collect())
   }
 
-  pub async fn get_feed(&self, auth: AuthData, req: FeedRequest) -> Result<Vec<ArticleDetails>> {
+  pub async fn get_feed(&self, auth: &AuthData, req: FeedRequest) -> Result<Vec<ArticleDetails>> {
     let user_id = auth.user_id;
     let limit = req.limit.unwrap_or(20);
     let offset = req.offset.unwrap_or(0);

@@ -33,3 +33,4 @@ allow_update = true
 [Article]
 allow_update = true
 allow_delete = true
+allow_comments = true
