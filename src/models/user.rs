@@ -14,7 +14,7 @@ pub struct User {
   pub updated_at: NaiveDateTime,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Profile {
   #[serde(skip)]
   pub user_id: i32,

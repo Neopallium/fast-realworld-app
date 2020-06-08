@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::*;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Article {
   pub id: i32,
   pub author_id: i32,
@@ -16,7 +16,7 @@ pub struct Article {
   pub updated_at: NaiveDateTime,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ArticleDetails {
   #[serde(skip)]

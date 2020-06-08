@@ -1,3 +1,9 @@
+use std::collections::HashMap;
+
+use slug::slugify;
+
+use tokio_postgres::Row;
+
 use crate::error::*;
 
 use crate::auth::*;
@@ -7,12 +13,22 @@ use crate::forms::article::*;
 use crate::db::*;
 use crate::db::util::*;
 
-use tokio_postgres::Row;
-
 #[derive(Clone)]
 pub struct ArticleService {
   // get one article
+  article_by_id: VersionedStatement,
   article_by_slug: VersionedStatement,
+
+  // store article
+  store_article: VersionedStatement,
+  add_tag: VersionedStatement,
+  delete_tag: VersionedStatement,
+
+  // update article
+  update_article: VersionedStatement,
+
+  // delete article
+  delete_article: VersionedStatement,
 
   // get multiple articles
   get_articles: VersionedStatement,
@@ -99,6 +115,13 @@ fn article_details_from_opt_row(row: &Option<Row>) -> Option<ArticleDetails> {
   }
 }
 
+#[derive(Debug)]
+enum TagChange {
+  Add,
+  Remove,
+  Keep,
+}
+
 static ARTICLE_DETAILS_SELECT: &'static str = r#"
 SELECT a.id, slug, title, description, body, a.created_at, a.updated_at,
   (SELECT STRING_AGG(tag_name, ',') FROM article_tags WHERE article_id = a.id) AS TagList,
@@ -126,8 +149,29 @@ FROM following f INNER JOIN articles a ON a.author_id = f.author_id
 impl ArticleService {
   pub fn new(cl: SharedClient) -> Result<ArticleService> {
     // Build article_by_* queries
+    let article_by_id = VersionedStatement::new(cl.clone(),
+        &format!(r#"{} WHERE a.id = $2"#, ARTICLE_DETAILS_SELECT))?;
     let article_by_slug = VersionedStatement::new(cl.clone(),
         &format!(r#"{} WHERE a.slug = $2"#, ARTICLE_DETAILS_SELECT))?;
+
+    // store article query
+    let store_article = VersionedStatement::new(cl.clone(),
+        r#"INSERT INTO articles(author_id, slug, title, description, body)
+        VALUES($1, $2, $3, $4, $5) RETURNING id"#)?;
+    let add_tag = VersionedStatement::new(cl.clone(),
+        r#"INSERT INTO article_tags(article_id, tag_name)
+        VALUES($1, $2)"#)?;
+    let delete_tag = VersionedStatement::new(cl.clone(),
+        r#"DELETE FROM article_tags WHERE article_id = $1 AND tag_name = $2"#)?;
+
+    // update article query
+    let update_article = VersionedStatement::new(cl.clone(),
+        r#"UPDATE articles SET slug = $2, title = $3, description = $4, body = $5
+        WHERE id = $1"#)?;
+
+    // delete article query
+    let delete_article = VersionedStatement::new(cl.clone(),
+        r#"DELETE FROM articles WHERE id = $1"#)?;
 
     // Build get_articles queries
     let get_articles = VersionedStatement::new(cl.clone(),
@@ -145,7 +189,15 @@ impl ArticleService {
         "DELETE FROM favorite_articles WHERE user_id = $1 AND article_id = $2")?;
 
     Ok(ArticleService {
+      article_by_id,
       article_by_slug,
+
+      store_article,
+      add_tag,
+      delete_tag,
+
+      update_article,
+      delete_article,
 
       get_articles,
       get_feed,
@@ -156,7 +208,15 @@ impl ArticleService {
   }
 
   pub async fn prepare(&self) -> Result<()> {
+    self.article_by_id.prepare().await?;
     self.article_by_slug.prepare().await?;
+
+    self.store_article.prepare().await?;
+    self.add_tag.prepare().await?;
+    self.delete_tag.prepare().await?;
+
+    self.update_article.prepare().await?;
+    self.delete_article.prepare().await?;
 
     self.get_articles.prepare().await?;
     self.get_feed.prepare().await?;
@@ -166,9 +226,82 @@ impl ArticleService {
     Ok(())
   }
 
+  pub async fn get_by_id(&self, auth: &AuthData, article_id: i32) -> Result<Option<ArticleDetails>> {
+    let row = self.article_by_id.query_opt(&[&auth.user_id, &article_id]).await?;
+    Ok(article_details_from_opt_row(&row))
+  }
+
   pub async fn get_by_slug(&self, auth: &AuthData, slug: &str) -> Result<Option<ArticleDetails>> {
     let row = self.article_by_slug.query_opt(&[&auth.user_id, &slug]).await?;
     Ok(article_details_from_opt_row(&row))
+  }
+
+  pub async fn store(&self, auth: &AuthData, article: &CreateArticle) -> Result<Option<i32>> {
+    let slug = slugify(&article.title);
+    match self.store_article.query_opt(&[
+        &auth.user_id, &slug, &article.title, &article.description, &article.body
+      ]).await? {
+      Some(row) => {
+        let article_id: i32 = row.get(0);
+        // add tags to new article.
+        for tag in &article.tag_list {
+          self.add_tag.execute(&[&article_id, &tag]).await?;
+        }
+        Ok(Some(article_id))
+      },
+      None => {
+        Ok(None)
+      }
+    }
+  }
+
+  pub async fn update(&self, article: &mut ArticleDetails, req: &UpdateArticle) -> Result<u64> {
+    // Update article fields
+    if let Some(title) = &req.title {
+      article.title = title.clone();
+      article.slug = slugify(&title);
+    }
+    if let Some(desc) = &req.description {
+      article.description = desc.clone();
+    }
+    if let Some(body) = &req.body {
+      article.body = body.clone();
+    }
+    // store article changes.
+    self.update_article.execute(&[
+        &article.id, &article.slug, &article.title, &article.description, &article.body
+    ]).await?;
+
+    // update list of tags.
+    let mut tags = HashMap::new();
+    for tag in &article.tag_list {
+      // mark all old tags as remove.
+      tags.insert(tag, TagChange::Remove);
+    }
+    for tag in &req.tag_list {
+      tags.entry(&tag)
+        .and_modify(|e| *e = TagChange::Keep)
+        .or_insert(TagChange::Add);
+    }
+
+    // apply tag changes
+    for (tag, change) in tags.iter() {
+      match change {
+        TagChange::Add => {
+          self.add_tag.execute(&[&article.id, &tag]).await?;
+        },
+        TagChange::Remove => {
+          self.delete_tag.execute(&[&article.id, &tag]).await?;
+        },
+        TagChange::Keep => (),
+      }
+    }
+
+    Ok(1)
+  }
+
+  pub async fn delete(&self, article_id: i32) -> Result<u64> {
+    Ok(self.delete_article.execute(&[&article_id]).await?)
   }
 
   pub async fn favorite(&self, auth: &AuthData, article_id: i32) -> Result<u64> {

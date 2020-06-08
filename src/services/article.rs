@@ -1,7 +1,5 @@
-use log::*;
-
 use actix_web::{
-  get, post, delete, web, HttpResponse,
+  get, post, put, delete, web, HttpResponse,
   Error
 };
 
@@ -76,31 +74,55 @@ async fn get_article(
 /// post new article
 #[post("/articles", wrap="Auth::required()")]
 async fn store_article(
-  _auth: AuthData,
-  _db: web::Data<DbService>,
-  article: web::Json<ArticleOut<CreateArticle>>,
+  auth: AuthData,
+  db: web::Data<DbService>,
+  req: web::Json<ArticleOut<CreateArticle>>,
 ) -> Result<HttpResponse, Error> {
-  let article = article.into_inner().article;
-
-  info!("Article - new article: TODO");
-  Ok(HttpResponse::Ok().json(article))
+  match db.article.store(&auth, &req.article).await? {
+    Some(article_id) => {
+      match db.article.get_by_id(&auth, article_id).await? {
+        Some(article) => {
+          Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
+            article,
+          }))
+        },
+        None => {
+          Ok(HttpResponse::NotFound().json(json!({
+            "error": "Failed to find saved article.",
+          })))
+        }
+      }
+    },
+    None => {
+      Ok(HttpResponse::InternalServerError().json(json!({
+        "error": "Failed to store article",
+      })))
+    }
+  }
 }
 
 /// post update to existing article
-#[post("/articles/{slug}", wrap="Auth::required()")]
+#[put("/articles/{slug}", wrap="Auth::required()")]
 async fn update_article(
   auth: AuthData,
   cfg: web::Data<ArticleService>,
   db: web::Data<DbService>,
   slug: web::Path<String>,
-  _req: web::Json<ArticleOut<UpdateArticle>>,
+  req: web::Json<ArticleOut<UpdateArticle>>,
 ) -> Result<HttpResponse, Error> {
   match db.article.get_by_slug(&auth, &slug).await? {
-    Some(old_article) => {
-      if cfg.allow_update {
-        info!("Article - update article: TODO");
+    Some(mut article) => {
+      if cfg.allow_update && article.author.user_id == auth.user_id {
+        let old_article = article.clone();
+        let article = if db.article.update(&mut article, &req.article).await? > 0 {
+          // article updated return updated article.
+          article
+        } else {
+          // Failed to update article, return old article.
+          old_article
+        };
         Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
-          article: old_article,
+          article,
         }))
       } else {
         Ok(HttpResponse::Forbidden().json(json!({
@@ -125,9 +147,9 @@ async fn delete_article(
   slug: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
   match db.article.get_by_slug(&auth, &slug).await? {
-    Some(_old_article) => {
-      if cfg.allow_delete {
-        info!("Article - delete article: TODO");
+    Some(article) => {
+      if cfg.allow_delete && article.author.user_id == auth.user_id {
+        db.article.delete(article.id).await?;
         Ok(HttpResponse::Ok().finish())
       } else {
         Ok(HttpResponse::Forbidden().json(json!({

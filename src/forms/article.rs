@@ -28,18 +28,20 @@ pub struct FeedRequest {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateArticle {
   pub title: String,
   pub description: String,
   pub body: String,
-  pub tags: Vec<String>,
+  pub tag_list: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateArticle {
   pub title: Option<String>,
   pub description: Option<String>,
   pub body: Option<String>,
-  pub tags: Option<Vec<String>>,
+  pub tag_list: Vec<String>,
 }
 
