@@ -1,5 +1,3 @@
-use log::*;
-
 use actix_web::{
   get, post, delete, web, HttpResponse,
   Error
@@ -7,34 +5,88 @@ use actix_web::{
 
 use crate::error::*;
 use crate::app::*;
+
+use crate::forms::*;
+
 use crate::db::DbService;
 
+use crate::auth::AuthData;
+use crate::middleware::Auth;
+
+
 /// get profile by username
-#[get("/profiles/{username}")]
+#[get("/profiles/{username}", wrap="Auth::optional()")]
 async fn get_profile(
-  _db: web::Data<DbService>,
-  _username: web::Path<String>,
+  auth: Option<AuthData>,
+  db: web::Data<DbService>,
+  username: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  info!("TODO");
-  Ok(HttpResponse::Ok().finish())
+  match db.user.get_profile(auth, &username).await? {
+    Some(profile) => {
+      Ok(HttpResponse::Ok().json(ProfileOut {
+        profile,
+      }))
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Profile not found",
+      })))
+    }
+  }
 }
 
 /// follow a user
-#[post("/profiles/{username}/follow")]
+#[post("/profiles/{username}/follow", wrap="Auth::required()")]
 async fn follow(
-  _db: web::Data<DbService>,
-  _username: web::Path<String>,
+  auth: AuthData,
+  db: web::Data<DbService>,
+  username: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  Ok(HttpResponse::Ok().finish())
+  match db.user.get_profile(Some(auth.clone()), &username).await? {
+    Some(mut profile) => {
+      // Check if the current user is already following them.
+      if !profile.following {
+        // update DB to mark the current user as following them.
+        db.user.follow(auth, profile.user_id).await?;
+        profile.following = true;
+      }
+      Ok(HttpResponse::Ok().json(ProfileOut {
+        profile,
+      }))
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Profile not found",
+      })))
+    }
+  }
 }
 
 /// unfollow a user
-#[delete("/profiles/{username}/follow")]
+#[delete("/profiles/{username}/follow", wrap="Auth::required()")]
 async fn unfollow(
-  _db: web::Data<DbService>,
-  _username: web::Path<String>,
+  auth: AuthData,
+  db: web::Data<DbService>,
+  username: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
-  Ok(HttpResponse::Ok().finish())
+  match db.user.get_profile(Some(auth.clone()), &username).await? {
+    Some(mut profile) => {
+      // Check if the current user is already following them.
+      if profile.following {
+        // update DB to mark the current user as not following them.
+        db.user.unfollow(auth, profile.user_id).await?;
+        profile.following = false;
+      }
+      Ok(HttpResponse::Ok().json(ProfileOut {
+        profile,
+      }))
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Profile not found",
+      })))
+    }
+  }
 }
 
 #[derive(Debug, Clone, Default)]

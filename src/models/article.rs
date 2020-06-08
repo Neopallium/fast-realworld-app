@@ -19,6 +19,8 @@ pub struct Article {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ArticleDetails {
+  #[serde(skip)]
+  pub id: i32,
   pub slug: String,
   pub title: String,
   pub description: String,

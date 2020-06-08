@@ -7,12 +7,13 @@ use actix_web::{
 
 use crate::error::*;
 use crate::app::*;
-use crate::models::*;
-use crate::auth::AuthData;
 
+use crate::models::*;
 use crate::forms::article::*;
+
 use crate::db::DbService;
 
+use crate::auth::AuthData;
 use crate::middleware::Auth;
 
 /// Get list of articles
@@ -61,6 +62,62 @@ async fn get_article(
     }))
   } else {
     Ok(HttpResponse::NotFound().finish())
+  }
+}
+
+/// favorite article
+#[post("/articles/{slug}/favorite", wrap="Auth::required()")]
+async fn favorite(
+  auth: AuthData,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
+) -> Result<HttpResponse, Error> {
+  match db.article.get_by_slug(Some(auth.clone()), &slug).await? {
+    Some(mut article) => {
+      // Check if the current user has already favorited the article
+      if !article.favorited {
+        // mark article as favorited by the current user
+        db.article.favorite(auth, article.id).await?;
+        article.favorited = true;
+        article.favorites_count += 1;
+      }
+      Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
+        article,
+      }))
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Article not found",
+      })))
+    }
+  }
+}
+
+/// unfavorite article
+#[delete("/articles/{slug}/favorite", wrap="Auth::required()")]
+async fn unfavorite(
+  auth: AuthData,
+  db: web::Data<DbService>,
+  slug: web::Path<String>,
+) -> Result<HttpResponse, Error> {
+  match db.article.get_by_slug(Some(auth.clone()), &slug).await? {
+    Some(mut article) => {
+      // Check if the current user has already favorited the article
+      if article.favorited {
+        // mark article as unfavorited by the current user
+        db.article.unfavorite(auth, article.id).await?;
+        article.favorited = false;
+        article.favorites_count -= 1;
+      }
+      Ok(HttpResponse::Ok().json(ArticleOut::<ArticleDetails> {
+        article,
+      }))
+    },
+    None => {
+      Ok(HttpResponse::NotFound().json(json!({
+        "error": "Article not found",
+      })))
+    }
   }
 }
 
@@ -127,6 +184,8 @@ impl super::Service for ArticleService {
       .service(list)
       .service(feed)
       .service(get_article)
+      .service(favorite)
+      .service(unfavorite)
       .service(store_article)
       .service(update_article)
       .service(delete_article);

@@ -13,7 +13,7 @@ pub struct TagService {
 }
 
 lazy_static! {
-  static ref ARTICLE_COLUMNS: ColumnMappers = {
+  static ref TAG_COLUMNS: ColumnMappers = {
     ColumnMappers {
       table_name: "tags",
       columns: vec![

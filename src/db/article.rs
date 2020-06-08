@@ -19,6 +19,10 @@ pub struct ArticleService {
 
   // get user's feed
   get_feed: VersionedStatement,
+
+  // (un)favorite article
+  favorite_article: VersionedStatement,
+  unfavorite_article: VersionedStatement,
 }
 
 lazy_static! {
@@ -37,24 +41,37 @@ lazy_static! {
       ],
     }
   };
+
+  static ref FAVORITE_COLUMNS: ColumnMappers = {
+    ColumnMappers {
+      table_name: "favorite_articles",
+      columns: vec![
+        column("user_id"),
+        column("article_id"),
+      ],
+    }
+  };
 }
 
 fn article_details_from_row(row: &Row) -> ArticleDetails {
-  let slug: String = row.get(0);
-  let title: String = row.get(1);
-  let description: String = row.get(2);
-  let body: String = row.get(3);
-  let created_at: chrono::NaiveDateTime = row.get(4);
-  let updated_at: chrono::NaiveDateTime = row.get(5);
-  let tags_list: &str = row.get(6);
-  let favorited: i32 = row.get(7);
-  let favorites_count: i32 = row.get(8);
-  let username: String = row.get(9);
-  let bio: Option<String> = row.get(10);
-  let image: Option<String> = row.get(11);
-  let following: i32 = row.get(12);
+  let id: i32 = row.get(0);
+  let slug: String = row.get(1);
+  let title: String = row.get(2);
+  let description: String = row.get(3);
+  let body: String = row.get(4);
+  let created_at: chrono::NaiveDateTime = row.get(5);
+  let updated_at: chrono::NaiveDateTime = row.get(6);
+  let tags_list: &str = row.get(7);
+  let favorited: i32 = row.get(8);
+  let favorites_count: i32 = row.get(9);
+  let user_id: i32 = row.get(10);
+  let username: String = row.get(11);
+  let bio: Option<String> = row.get(12);
+  let image: Option<String> = row.get(13);
+  let following: i32 = row.get(14);
 
   ArticleDetails {
+    id,
     slug,
     title,
     description,
@@ -65,6 +82,7 @@ fn article_details_from_row(row: &Row) -> ArticleDetails {
     favorited: favorited == 1,
     favorites_count: favorites_count.into(),
     author: Profile {
+      user_id,
       username,
       bio,
       image,
@@ -82,11 +100,11 @@ fn article_details_from_opt_row(row: &Option<Row>) -> Option<ArticleDetails> {
 }
 
 static ARTICLE_DETAILS_SELECT: &'static str = r#"
-SELECT slug, title, description, body, a.created_at, a.updated_at,
+SELECT a.id, slug, title, description, body, a.created_at, a.updated_at,
   (SELECT STRING_AGG(tag_name, ',') FROM article_tags WHERE article_id = a.id) AS TagList,
   (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id AND user_id = $1) AS Favorited,
   (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id) AS FavoritesCount,
-  u.username, u.bio, u.image,
+  u.id, u.username, u.bio, u.image,
   (SELECT COUNT(*)::integer FROM followers WHERE user_id = u.id AND follower_id = $1) AS Following
 FROM articles a INNER JOIN users u ON a.author_id = u.id
 "#;
@@ -95,11 +113,11 @@ static FEED_DETAILS_SELECT: &'static str = r#"
 WITH following(author_id) AS (
   SELECT user_id FROM followers WHERE follower_id = $1
 )
-SELECT slug, title, description, body, a.created_at, a.updated_at,
+SELECT a.id, slug, title, description, body, a.created_at, a.updated_at,
   (SELECT STRING_AGG(tag_name, ',') FROM article_tags WHERE article_id = a.id) AS TagList,
   (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id AND user_id = $1) AS Favorited,
   (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id) AS FavoritesCount,
-  u.username, u.bio, u.image,
+  u.id, u.username, u.bio, u.image,
   1::integer AS Following
 FROM following f INNER JOIN articles a ON a.author_id = f.author_id
   INNER JOIN users u ON a.author_id = u.id
@@ -120,11 +138,20 @@ impl ArticleService {
         &format!(r#"{} ORDER BY a.id DESC LIMIT $2 OFFSET $3 "#,
         FEED_DETAILS_SELECT))?;
 
+    // (un)favorite
+    let favorite_article = VersionedStatement::new(cl.clone(),
+        &FAVORITE_COLUMNS.build_upsert("(user_id, article_id)", true))?;
+    let unfavorite_article = VersionedStatement::new(cl.clone(),
+        "DELETE FROM favorite_articles WHERE user_id = $1 AND article_id = $2")?;
+
     Ok(ArticleService {
       article_by_slug,
 
       get_articles,
       get_feed,
+
+      favorite_article,
+      unfavorite_article,
     })
   }
 
@@ -133,6 +160,9 @@ impl ArticleService {
 
     self.get_articles.prepare().await?;
     self.get_feed.prepare().await?;
+
+    self.favorite_article.prepare().await?;
+    self.unfavorite_article.prepare().await?;
     Ok(())
   }
 
@@ -140,6 +170,14 @@ impl ArticleService {
     let user_id = auth.unwrap_or_default().user_id;
     let row = self.article_by_slug.query_opt(&[&user_id, &slug]).await?;
     Ok(article_details_from_opt_row(&row))
+  }
+
+  pub async fn favorite(&self, auth: AuthData, article_id: i32) -> Result<u64> {
+    Ok(self.favorite_article.execute(&[&auth.user_id, &article_id]).await?)
+  }
+
+  pub async fn unfavorite(&self, auth: AuthData, article_id: i32) -> Result<u64> {
+    Ok(self.unfavorite_article.execute(&[&auth.user_id, &article_id]).await?)
   }
 
   pub async fn get_articles(&self, auth: Option<AuthData>, req: ArticleRequest) -> Result<Vec<ArticleDetails>> {

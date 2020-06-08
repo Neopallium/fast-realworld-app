@@ -33,7 +33,7 @@ pub struct UpdateUser {
   pub image: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProfileOut {
   pub profile: Profile,
 }

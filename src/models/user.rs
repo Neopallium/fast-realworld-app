@@ -16,6 +16,8 @@ pub struct User {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Profile {
+  #[serde(skip)]
+  pub user_id: i32,
   pub username: String,
   pub bio: Option<String>,
   pub image: Option<String>,
