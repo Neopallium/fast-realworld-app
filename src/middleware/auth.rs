@@ -129,7 +129,7 @@ where
     let has_auth = match decode_jwt_claims(req.headers()) {
       Ok(Some(auth_data)) => {
         debug!("Has authorization token: {:?}", auth_data);
-        req.extensions_mut().insert(Some(auth_data));
+        req.extensions_mut().insert(auth_data);
 
         true
       },
