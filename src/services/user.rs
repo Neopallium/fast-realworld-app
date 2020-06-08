@@ -90,14 +90,21 @@ async fn get_user(
 /// update user
 #[put("/user", wrap="Auth::required()")]
 async fn update(
-  _auth: AuthData,
-  _db: web::Data<DbService>,
-  user: web::Json<UserOut<UpdateUser>>,
+  auth: AuthData,
+  db: web::Data<DbService>,
+  req: web::Json<UserOut<UpdateUser>>,
 ) -> Result<HttpResponse, Error> {
-  let user = user.into_inner().user;
-
-  info!("TODO");
-  Ok(HttpResponse::Ok().json(user))
+  // Get current user from database
+  match db.user.get_by_id(auth.user_id).await? {
+    Some(mut user) => {
+      db.user.update(&mut user, &req.user).await?;
+      Ok(HttpResponse::Ok().json(UserResponse::try_from(user)?))
+    },
+    _ => {
+      // invalid user.
+      Ok(HttpResponse::NotFound().finish())
+    }
+  }
 }
 
 #[derive(Debug, Clone, Default)]

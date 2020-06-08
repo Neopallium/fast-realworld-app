@@ -22,6 +22,9 @@ pub struct UserService {
   // update password
   update_user_password: VersionedStatement,
 
+  // update user
+  update_user: VersionedStatement,
+
   // get profile
   get_profile: VersionedStatement,
 
@@ -118,6 +121,12 @@ impl UserService {
     let update_user_password = VersionedStatement::new(cl.clone(),
         r#"UPDATE users SET password = $1 WHERE id = $2"#)?;
 
+    // update user
+    let update_user = VersionedStatement::new(cl.clone(),
+        r#"UPDATE users
+        SET username = $2, email = $3, password = $4, bio = $5, image = $6
+        WHERE id = $1"#)?;
+
     // get profile
     let get_profile = VersionedStatement::new(cl.clone(),
         r#"SELECT u.id, u.username, u.bio, u.image,
@@ -142,6 +151,8 @@ impl UserService {
 
       update_user_password,
 
+      update_user,
+
       get_profile,
 
       follow_user,
@@ -157,6 +168,8 @@ impl UserService {
     self.insert_user.prepare().await?;
 
     self.update_user_password.prepare().await?;
+
+    self.update_user.prepare().await?;
 
     self.get_profile.prepare().await?;
 
@@ -196,6 +209,38 @@ impl UserService {
   pub async fn update_password(&self, user_id: i32, password: &str) -> Result<u64> {
     let hash = pass::hash_password(&password)?;
     Ok(self.update_user_password.execute(&[&hash, &user_id]).await?)
+  }
+
+  pub async fn update(&self, user: &mut User, req: &UpdateUser) -> Result<u64> {
+    // Update user fields
+    if let Some(username) = &req.username {
+      user.username = username.clone();
+    }
+    if let Some(email) = &req.email {
+      user.email = email.clone();
+    }
+    if let Some(password) = &req.password {
+      let hash = pass::hash_password(&password)?;
+      user.password = hash;
+    }
+    if let Some(bio) = &req.bio {
+      if bio == "" {
+        user.bio = None;
+      } else {
+        user.bio = Some(bio.clone());
+      }
+    }
+    if let Some(image) = &req.image {
+      if image == "" {
+        user.image = None;
+      } else {
+        user.image = Some(image.clone());
+      }
+    }
+    // store user changes.
+    Ok(self.update_user.execute(&[
+      &user.id, &user.username, &user.email, &user.password, &user.bio, &user.image
+    ]).await?)
   }
 
   pub async fn get_profile(&self, auth: &AuthData, username: &str) -> Result<Option<Profile>> {
