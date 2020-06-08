@@ -1,5 +1,3 @@
-use log::*;
-
 use actix_web::{
   get, web, HttpResponse,
   Error
@@ -8,14 +6,16 @@ use actix_web::{
 use crate::error::*;
 use crate::app::*;
 
+use crate::db::DbService;
+
 /// Get list of tags
 #[get("/tags")]
 async fn list(
-  _cfg: web::Data<TagService>,
+  db: web::Data<DbService>,
 ) -> Result<HttpResponse, Error> {
-  // TODO
-  info!("Tag - list: TODO");
-  Ok(HttpResponse::Ok().body("{}"))
+  // Get list of tags
+  let tags = db.tag.get_tags().await?;
+  Ok(HttpResponse::Ok().json(tags))
 }
 
 #[derive(Debug, Clone, Default)]
@@ -29,7 +29,6 @@ impl super::Service for TagService {
 
   fn api_config(&self, web: &mut web::ServiceConfig) {
     web
-      .data(self.clone())
       .service(list);
   }
 }

@@ -16,6 +16,7 @@ use crate::error::*;
 use super::{
   UserService,
   ArticleService,
+  TagService,
 };
 
 const MAX_RETRIES: u32 = 10;
@@ -352,6 +353,7 @@ pub struct DbService {
   pub shared_cl: SharedClient,
   pub user: UserService,
   pub article: ArticleService,
+  pub tag: TagService,
 }
 
 impl DbService {
@@ -361,6 +363,7 @@ impl DbService {
     Ok(DbService {
       user: UserService::new(shared_cl.clone())?,
       article: ArticleService::new(shared_cl.clone())?,
+      tag: TagService::new(shared_cl.clone())?,
       shared_cl: shared_cl,
     })
   }
@@ -370,6 +373,8 @@ impl DbService {
     self.user.prepare().await?;
     info!("DBService: Prepare ArticleService.");
     self.article.prepare().await?;
+    info!("DBService: Prepare TagService.");
+    self.tag.prepare().await?;
 
     info!("DBService: finished.");
     Ok(())

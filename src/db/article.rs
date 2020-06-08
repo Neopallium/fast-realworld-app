@@ -16,6 +16,9 @@ pub struct ArticleService {
 
   // get multiple articles
   get_articles: VersionedStatement,
+
+  // get user's feed
+  get_feed: VersionedStatement,
 }
 
 lazy_static! {
@@ -44,12 +47,12 @@ fn article_details_from_row(row: &Row) -> ArticleDetails {
   let created_at: chrono::NaiveDateTime = row.get(4);
   let updated_at: chrono::NaiveDateTime = row.get(5);
   let tags_list: &str = row.get(6);
-  let favorited: i64 = row.get(7);
-  let favorites_count: i64 = row.get(8);
+  let favorited: i32 = row.get(7);
+  let favorites_count: i32 = row.get(8);
   let username: String = row.get(9);
   let bio: Option<String> = row.get(10);
   let image: Option<String> = row.get(11);
-  let following: i64 = row.get(12);
+  let following: i32 = row.get(12);
 
   ArticleDetails {
     slug,
@@ -60,7 +63,7 @@ fn article_details_from_row(row: &Row) -> ArticleDetails {
     updated_at,
     tag_list: tags_list.split(",").map(|s| s.to_string()).collect(),
     favorited: favorited == 1,
-    favorites_count,
+    favorites_count: favorites_count.into(),
     author: Profile {
       username,
       bio,
@@ -81,11 +84,25 @@ fn article_details_from_opt_row(row: &Option<Row>) -> Option<ArticleDetails> {
 static ARTICLE_DETAILS_SELECT: &'static str = r#"
 SELECT slug, title, description, body, a.created_at, a.updated_at,
   (SELECT STRING_AGG(tag_name, ',') FROM article_tags WHERE article_id = a.id) AS TagList,
-  (SELECT COUNT(*) FROM favorite_articles WHERE article_id = a.id AND user_id = $1) AS Favorited,
-  (SELECT COUNT(*) FROM favorite_articles WHERE article_id = a.id) AS FavoritesCount,
+  (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id AND user_id = $1) AS Favorited,
+  (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id) AS FavoritesCount,
   u.username, u.bio, u.image,
-  (SELECT COUNT(*) FROM followers WHERE user_id = u.id AND follower_id = $1) AS Following
+  (SELECT COUNT(*)::integer FROM followers WHERE user_id = u.id AND follower_id = $1) AS Following
 FROM articles a INNER JOIN users u ON a.author_id = u.id
+"#;
+
+static FEED_DETAILS_SELECT: &'static str = r#"
+WITH following(author_id) AS (
+  SELECT user_id FROM followers WHERE follower_id = $1
+)
+SELECT slug, title, description, body, a.created_at, a.updated_at,
+  (SELECT STRING_AGG(tag_name, ',') FROM article_tags WHERE article_id = a.id) AS TagList,
+  (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id AND user_id = $1) AS Favorited,
+  (SELECT COUNT(*)::integer FROM favorite_articles WHERE article_id = a.id) AS FavoritesCount,
+  u.username, u.bio, u.image,
+  1::integer AS Following
+FROM following f INNER JOIN articles a ON a.author_id = f.author_id
+  INNER JOIN users u ON a.author_id = u.id
 "#;
 
 impl ArticleService {
@@ -98,15 +115,24 @@ impl ArticleService {
     let get_articles = VersionedStatement::new(cl.clone(),
         &format!(r#"{} ORDER BY a.id DESC LIMIT $2 OFFSET $3 "#, ARTICLE_DETAILS_SELECT))?;
 
+    // Build get_feed queries
+    let get_feed = VersionedStatement::new(cl.clone(),
+        &format!(r#"{} ORDER BY a.id DESC LIMIT $2 OFFSET $3 "#,
+        FEED_DETAILS_SELECT))?;
+
     Ok(ArticleService {
       article_by_slug,
+
       get_articles,
+      get_feed,
     })
   }
 
   pub async fn prepare(&self) -> Result<()> {
     self.article_by_slug.prepare().await?;
 
+    self.get_articles.prepare().await?;
+    self.get_feed.prepare().await?;
     Ok(())
   }
 
@@ -121,6 +147,14 @@ impl ArticleService {
     let limit = req.limit.unwrap_or(20);
     let offset = req.offset.unwrap_or(0);
     let rows = self.get_articles.query(&[&user_id, &limit, &offset]).await?;
+    Ok(rows.iter().map(article_details_from_row).collect())
+  }
+
+  pub async fn get_feed(&self, auth: AuthData, req: FeedRequest) -> Result<Vec<ArticleDetails>> {
+    let user_id = auth.user_id;
+    let limit = req.limit.unwrap_or(20);
+    let offset = req.offset.unwrap_or(0);
+    let rows = self.get_feed.query(&[&user_id, &limit, &offset]).await?;
     Ok(rows.iter().map(article_details_from_row).collect())
   }
 }

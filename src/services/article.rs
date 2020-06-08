@@ -32,6 +32,22 @@ async fn list(
   }))
 }
 
+/// Get current user's feed
+#[get("/articles/feed", wrap="Auth::required()")]
+async fn feed(
+  auth: AuthData,
+  db: web::Data<DbService>,
+  req: web::Query<FeedRequest>
+) -> Result<HttpResponse, Error> {
+
+  let articles = db.article.get_feed(auth, req.into_inner()).await?;
+
+  Ok(HttpResponse::Ok().json(ArticleList::<ArticleDetails> {
+    articles_count: articles.len(),
+    articles,
+  }))
+}
+
 /// get article by slug
 #[get("/articles/{slug}", wrap="Auth::optional()")]
 async fn get_article(
@@ -109,6 +125,7 @@ impl super::Service for ArticleService {
     web
       .data(self.clone())
       .service(list)
+      .service(feed)
       .service(get_article)
       .service(store_article)
       .service(update_article)
