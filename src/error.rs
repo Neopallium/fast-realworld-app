@@ -48,12 +48,6 @@ pub enum Error {
     source: JwtError,
   },
 
-  #[error("actix mailbox error")]
-  MailboxError {
-    #[from]
-    source: actix::MailboxError,
-  },
-
   #[error("disconnected: {0}")]
   DisconnectedError(String),
 
