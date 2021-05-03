@@ -29,6 +29,9 @@ pub struct ArticleService {
 
   // delete article
   delete_article: VersionedStatement,
+  delete_article_tags: VersionedStatement,
+  delete_article_favs: VersionedStatement,
+  delete_article_comments: VersionedStatement,
 
   // get multiple articles
   get_articles: VersionedStatement,
@@ -182,6 +185,12 @@ impl ArticleService {
     // delete article query
     let delete_article = VersionedStatement::new(cl.clone(),
         r#"DELETE FROM articles WHERE id = $1"#)?;
+    let delete_article_tags = VersionedStatement::new(cl.clone(),
+        r#"DELETE FROM article_tags WHERE article_id = $1"#)?;
+    let delete_article_favs = VersionedStatement::new(cl.clone(),
+        r#"DELETE FROM favorite_articles WHERE article_id = $1"#)?;
+    let delete_article_comments = VersionedStatement::new(cl.clone(),
+        r#"DELETE FROM comments WHERE article_id = $1"#)?;
 
     // Build get_articles queries
     let get_articles = VersionedStatement::new(cl.clone(),
@@ -220,6 +229,9 @@ impl ArticleService {
 
       update_article,
       delete_article,
+      delete_article_tags,
+      delete_article_favs,
+      delete_article_comments,
 
       get_articles,
       get_articles_by_author,
@@ -242,6 +254,9 @@ impl ArticleService {
 
     self.update_article.prepare().await?;
     self.delete_article.prepare().await?;
+    self.delete_article_tags.prepare().await?;
+    self.delete_article_favs.prepare().await?;
+    self.delete_article_comments.prepare().await?;
 
     self.get_articles.prepare().await?;
     self.get_articles_by_author.prepare().await?;
@@ -329,6 +344,9 @@ impl ArticleService {
   }
 
   pub async fn delete(&self, article_id: i32) -> Result<u64> {
+    self.delete_article_tags.execute(&[&article_id]).await?;
+    self.delete_article_favs.execute(&[&article_id]).await?;
+    self.delete_article_comments.execute(&[&article_id]).await?;
     Ok(self.delete_article.execute(&[&article_id]).await?)
   }
 
