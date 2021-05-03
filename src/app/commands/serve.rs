@@ -196,9 +196,9 @@ async fn test_db(url: String) -> Result<()> {
   db.prepare().await
 }
 
-fn setup_cors(config: &Option<config::Table>) -> Result<CorsFactory> {
+fn setup_cors(config: &Option<config::Table>) -> Result<Cors> {
   if let Some(config) = config {
-    let mut cors = Cors::new();
+    let mut cors = Cors::default();
 
     // Origins
     if let Some(origins) = config.get_str_array("origins")? {
@@ -225,11 +225,12 @@ fn setup_cors(config: &Option<config::Table>) -> Result<CorsFactory> {
 
     // max age
     if let Some(max_age) = config.get_int("max-age")? {
+      let max_age: usize = max_age.try_into().expect("max-age must be positive.");
       debug!("Cors: max-age = {}", max_age);
-      cors = cors.max_age(max_age.try_into().expect("max-age must be positive."));
+      cors = cors.max_age(Some(max_age));
     }
 
-    Ok(cors.finish())
+    Ok(cors)
   } else {
     Ok(Cors::default())
   }

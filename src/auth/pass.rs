@@ -33,7 +33,7 @@ impl CheckedPass {
 pub fn check_password(stored: &str, password: &str) -> Result<CheckedPass> {
   let checker = HashBuilder::from_phc(stored)?;
   if checker.is_valid(password) {
-    if checker.needs_update(PWD_SCHEME_VERSION) {
+    if checker.needs_update(Some(PWD_SCHEME_VERSION)) {
       Ok(CheckedPass::new(true, true))
     } else {
       Ok(CheckedPass::new(true, false))
