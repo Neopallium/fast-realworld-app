@@ -1,4 +1,4 @@
-# ![RealWorld Example App](logo.png)
+# RealWorld Example App
 
 > RealWorld example backend that adheres to the [RealWorld](https://github.com/gothinkster/realworld) spec and API.
 
